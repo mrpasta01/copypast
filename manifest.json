@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Копирка",
+  "version": "1.3",
+  "description": "Копирует текст из выбранного элемента на странице.",
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "storage",
+    "scripting"
+  ],
+  "action": {
+    "default_icon": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["floating-ui.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.js", "icon.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

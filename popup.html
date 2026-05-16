@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Менеджер элементов</title>
+    <!-- Строгий шрифт без лишних украшений -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 380px;
+            background: #f4f7fb;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            color: #1a2c3a;
+            padding: 20px 18px 24px 18px;
+            margin: 0 auto;
+        }
+
+        /* Заголовок — строгий, без градиентов и эмодзи */
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: #1e3a4d;
+            margin-bottom: 20px;
+            padding-left: 0;
+            border-left: 3px solid #3a7b94;
+            padding-left: 12px;
+        }
+
+        /* Группа кнопок */
+        .action-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Общий стиль кнопок — плоский, без излишеств */
+        button {
+            border: none;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            border-radius: 6px;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 10px 16px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: #ffffff;
+            border: 1px solid #cbdce6;
+            color: #2c5a72;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+        }
+
+        .action-btn:hover {
+            background: #eef3f8;
+            border-color: #9bb7cc;
+            transform: translateY(-1px);
+        }
+
+        .action-btn:active {
+            transform: translateY(1px);
+        }
+
+        /* Цветовые акценты — без градиентов, приглушённые */
+        #rememberBtn {
+            background: #2c6e8f;
+            border: none;
+            color: white;
+        }
+        #rememberBtn:hover {
+            background: #235c78;
+        }
+
+        #autoFillBtn {
+            background: #2f7d67;
+            border: none;
+            color: white;
+        }
+        #autoFillBtn:hover {
+            background: #266854;
+        }
+
+        #copyBtn {
+            background: #f0f4f8;
+            border-color: #cbdde6;
+            color: #2c5a72;
+        }
+        #copyBtn:hover {
+            background: #e4ecf3;
+        }
+
+        #clearBtn {
+            background: #fef6f4;
+            border-color: #e2cfca;
+            color: #b45a4a;
+            margin-top: 6px;
+        }
+        #clearBtn:hover {
+            background: #fce8e4;
+            border-color: #ccaa9f;
+            color: #9e4636;
+        }
+
+        /* Разделитель — простая линия */
+        hr {
+            margin: 18px 0 16px;
+            border: none;
+            height: 1px;
+            background: #d0e0ea;
+        }
+
+        /* Заголовок списка — без украшений и эмодзи */
+        h4 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #4c6e82;
+            margin: 0 0 12px 0;
+        }
+
+        /* Контейнер списка */
+        #pairsList {
+            background: #ffffffcc;
+            border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 8px 0 16px 0;
+            padding: 6px;
+            border: 1px solid #e2edf4;
+        }
+
+        /* Карточка пары */
+        .pair {
+            background: white;
+            border-radius: 10px;
+            margin: 8px 4px;
+            padding: 12px 14px;
+            transition: 0.1s ease;
+            border: 1px solid #e7f0f5;
+        }
+        .pair:hover {
+            border-color: #c2d8e6;
+            background: #fefefe;
+        }
+
+        /* Ключ (селектор) — бейдж без эмодзи */
+        .key {
+            font-weight: 600;
+            font-size: 0.7rem;
+            color: #1c6f8c;
+            background: #eaf1f7;
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: inline-block;
+            word-break: break-word;
+            margin-bottom: 12px;
+            font-family: 'Inter', monospace;
+            border: 1px solid #d2e4ef;
+        }
+
+        /* Контейнер значения */
+        .value-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+            width: 100%;
+        }
+
+        /* Значение */
+        .value {
+            font-size: 0.8rem;
+            font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+            color: #1f4c62;
+            background: #fafefe;
+            padding: 6px 12px;
+            border-radius: 10px;
+            flex: 1;
+            word-break: break-word;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.4;
+            border: 1px solid #e2edf2;
+        }
+
+        /* Кнопка копирования в паре — текстовая, без иконок */
+        .copy-btn {
+            background: #f0f5fa;
+            border: 1px solid #cfdfea;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-weight: 500;
+            color: #2f6f8c;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: 0.1s;
+            font-family: inherit;
+        }
+        .copy-btn:hover {
+            background: #e2eef7;
+            border-color: #acc7db;
+            color: #145c7a;
+        }
+
+        /* Скролл */
+        #pairsList::-webkit-scrollbar {
+            width: 5px;
+        }
+        #pairsList::-webkit-scrollbar-track {
+            background: #e2edf4;
+            border-radius: 6px;
+        }
+        #pairsList::-webkit-scrollbar-thumb {
+            background: #b2cfdf;
+            border-radius: 6px;
+        }
+        #pairsList::-webkit-scrollbar-thumb:hover {
+            background: #8fb4c9;
+        }
+
+        /* Пустое состояние */
+        #pairsList:empty::before {
+            content: "Нет сохранённых элементов. Нажмите «Запомнить элементы».";
+            display: block;
+            text-align: center;
+            color: #778f9e;
+            font-size: 0.75rem;
+            padding: 32px 16px;
+            background: #f9fbfd;
+            border-radius: 12px;
+            font-weight: 450;
+        }
+
+        @media (max-width: 380px) {
+            body {
+                width: 340px;
+                padding: 16px 14px 20px;
+            }
+            .value {
+                font-size: 0.7rem;
+                padding: 5px 10px;
+            }
+            .copy-btn {
+                padding: 5px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="action-group">
+        <button id="copyBtn" class="action-btn">Копировать текст из элемента</button>
+        <button id="rememberBtn" class="action-btn">Запомнить элементы</button>
+        <button id="autoFillBtn" class="action-btn">Автозаполнить на этой странице</button>
+    </div>
+    <hr>
+    <h4>СОХРАНЁННЫЕ ЭЛЕМЕНТЫ</h4>
+    <div id="pairsList"></div>
+    <button id="clearBtn" class="action-btn">Очистить всё</button>
+    <script src="popup.js"></script>
+</body>
+</html>
