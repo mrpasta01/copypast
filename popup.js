@@ -1,5 +1,3 @@
-// popup.js – обновлённая версия с автообновлением списка
-
 document.getElementById('copyBtn').addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     chrome.tabs.sendMessage(tab.id, { command: 'startSelectionCopy' });
@@ -15,38 +13,38 @@ document.getElementById('autoFillBtn').addEventListener('click', async () => {
     chrome.tabs.sendMessage(tab.id, { command: 'autoFill' });
 });
 
+// Удаляем всё без подтверждения
 document.getElementById('clearBtn').addEventListener('click', async () => {
     await chrome.storage.local.remove('keyValuePairs');
     loadPairsList();
 });
-
 
 async function loadPairsList() {
     const result = await chrome.storage.local.get('keyValuePairs');
     const pairs = result.keyValuePairs || {};
     const container = document.getElementById('pairsList');
     container.innerHTML = '';
-    
+
     if (Object.keys(pairs).length === 0) {
         container.innerHTML = '<div style="text-align:center;color:#888;">Нет сохранённых элементов</div>';
         return;
     }
-    
+
     for (const [key, value] of Object.entries(pairs)) {
         const div = document.createElement('div');
         div.className = 'pair';
-        
+
         const keySpan = document.createElement('span');
         keySpan.className = 'key';
         keySpan.textContent = key;
-        
+
         const valueContainer = document.createElement('div');
         valueContainer.className = 'value-container';
-        
+
         const valueSpan = document.createElement('span');
         valueSpan.className = 'value';
         valueSpan.textContent = value;
-        
+
         const copyBtn = document.createElement('button');
         copyBtn.textContent = 'Копировать';
         copyBtn.className = 'copy-btn';
@@ -55,10 +53,26 @@ async function loadPairsList() {
             copyToClipboard(value);
             showCopyFeedback(copyBtn);
         });
-        
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑 Удалить';
+        deleteBtn.className = 'copy-btn';
+        deleteBtn.style.background = '#fef6f4';
+        deleteBtn.style.borderColor = '#e2cfca';
+        deleteBtn.style.color = '#b45a4a';
+        // Удаляем без подтверждения
+        deleteBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const newPairs = { ...pairs };
+            delete newPairs[key];
+            await chrome.storage.local.set({ keyValuePairs: newPairs });
+            loadPairsList(); // обновляем отображение
+        });
+
         valueContainer.appendChild(valueSpan);
         valueContainer.appendChild(copyBtn);
-        
+        valueContainer.appendChild(deleteBtn);
+
         div.appendChild(keySpan);
         div.appendChild(valueContainer);
         container.appendChild(div);
@@ -67,12 +81,10 @@ async function loadPairsList() {
 
 async function copyToClipboard(text) {
     try {
-        // Современный метод
         await navigator.clipboard.writeText(text);
         return true;
     } catch (err) {
         console.warn('Clipboard API failed, using fallback', err);
-        // Fallback через textarea
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -98,7 +110,7 @@ function showCopyFeedback(btn) {
 
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.keyValuePairs) {
-        loadPairsList(); // обновляем отображение
+        loadPairsList();
     }
 });
 

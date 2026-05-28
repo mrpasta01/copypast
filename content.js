@@ -1,7 +1,35 @@
 let floatContainer = null;
 let isPinned = false;
 
-// Стили для плавающего окна
+// ================== НОРМАЛИЗАЦИЯ КЛЮЧЕЙ ==================
+function normalizeKeyForStorage(key) {
+    if (!key) return '';
+    let normalized = key.trim();
+    normalized = normalized.replace(/\*/g, '');
+    normalized = normalized.replace(/\s*:\s*$/, '');
+    normalized = normalized.replace(/\s*\([^)]*(обязательно|required|необязательно|optional)[^)]*\)\s*/gi, '');
+    normalized = normalized.replace(/\s+(обязательно|required|необязательно|optional)\s*$/gi, '');
+    return normalized.trim();
+}
+
+function normalizeForCompare(str) {
+    if (!str) return '';
+    return normalizeKeyForStorage(str).toLowerCase();
+}
+
+function isValidValue(value) {
+    if (!value || value.length === 0) return false;
+    const trimmed = value.trim();
+    if (trimmed.length < 2) return false;
+    if (/^[✖✔❌✅🔒★☆]+$/.test(trimmed)) return false;
+    const trashWords = ['закрыть', 'удалить', 'редактировать', 'изменить', 'сохранить',
+                        'выбрать файл', 'перетащите файлы', 'отмена', 'копировать',
+                        'close', 'delete', 'edit', 'save', 'cancel'];
+    if (trashWords.includes(trimmed.toLowerCase())) return false;
+    return true;
+}
+
+// ================== СТИЛИ И ОКНО (без изменений) ==================
 function injectFloatStyles() {
     if (document.getElementById('my-ext-float-styles')) return;
     const style = document.createElement('style');
@@ -57,11 +85,49 @@ function injectFloatStyles() {
         .my-ext-pin {
             font-weight: bold;
         }
+        .my-ext-reset {
+            font-size: 16px;
+        }
     `;
     document.head.appendChild(style);
 }
 
-// Создаём плавающее окно
+function constrainWindowPosition() {
+    if (!floatContainer) return;
+    const rect = floatContainer.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width;
+    const maxY = window.innerHeight - rect.height;
+    let newLeft = rect.left;
+    let newTop = rect.top;
+    let changed = false;
+    if (newLeft < 0) { newLeft = 0; changed = true; }
+    if (newLeft > maxX) { newLeft = maxX; changed = true; }
+    if (newTop < 0) { newTop = 0; changed = true; }
+    if (newTop > maxY) { newTop = maxY; changed = true; }
+    if (changed) {
+        floatContainer.style.left = newLeft + 'px';
+        floatContainer.style.top = newTop + 'px';
+        chrome.storage.local.set({
+            floatWindowLeft: newLeft,
+            floatWindowTop: newTop
+        });
+    }
+}
+
+function resetWindowPosition() {
+    if (!floatContainer) return;
+    const width = floatContainer.offsetWidth;
+    const height = floatContainer.offsetHeight;
+    const left = (window.innerWidth - width) / 2;
+    const top = (window.innerHeight - height) / 2;
+    floatContainer.style.left = Math.max(0, left) + 'px';
+    floatContainer.style.top = Math.max(0, top) + 'px';
+    chrome.storage.local.set({
+        floatWindowLeft: Math.max(0, left),
+        floatWindowTop: Math.max(0, top)
+    });
+}
+
 async function createFloatingUI() {
     if (floatContainer) return;
     injectFloatStyles();
@@ -69,12 +135,12 @@ async function createFloatingUI() {
     floatContainer = document.createElement('div');
     floatContainer.id = 'my-ext-float-container';
 
-    // Заголовок для перетаскивания
     const header = document.createElement('div');
     header.className = 'my-ext-header';
     header.innerHTML = `
         <span>Копирка</span>
         <div>
+            <button class="my-ext-reset" title="Сбросить позицию">⟳</button>
             <button class="my-ext-pin" title="Закрепить/открепить">📌</button>
             <button class="my-ext-close" title="Закрыть">✖</button>
         </div>
@@ -87,15 +153,13 @@ async function createFloatingUI() {
     floatContainer.appendChild(iframe);
     document.body.appendChild(floatContainer);
 
-    // Перетаскивание
     makeDraggable(floatContainer, header);
-
-    // Кнопка закрытия
+    header.addEventListener('dblclick', resetWindowPosition);
+    header.querySelector('.my-ext-reset').addEventListener('click', resetWindowPosition);
     header.querySelector('.my-ext-close').addEventListener('click', () => {
         hideFloatWindow();
     });
 
-    // Кнопка закрепления
     const pinBtn = header.querySelector('.my-ext-pin');
     pinBtn.addEventListener('click', async () => {
         isPinned = !isPinned;
@@ -103,20 +167,24 @@ async function createFloatingUI() {
         await chrome.storage.local.set({ floatWindowPinned: isPinned });
     });
 
-    // Восстанавливаем состояние закрепления
     const storage = await chrome.storage.local.get('floatWindowPinned');
     isPinned = storage.floatWindowPinned || false;
     pinBtn.style.opacity = isPinned ? '1' : '0.5';
 
-    // Загружаем сохранённую позицию окна
     const pos = await chrome.storage.local.get(['floatWindowLeft', 'floatWindowTop']);
-    if (pos.floatWindowLeft && pos.floatWindowTop) {
+    if (pos.floatWindowLeft !== undefined && pos.floatWindowTop !== undefined) {
         floatContainer.style.left = pos.floatWindowLeft + 'px';
         floatContainer.style.top = pos.floatWindowTop + 'px';
+        setTimeout(constrainWindowPosition, 0);
+    } else {
+        resetWindowPosition();
     }
+    
+    const resizeObserver = new ResizeObserver(() => constrainWindowPosition());
+    resizeObserver.observe(floatContainer);
+    window.addEventListener('resize', () => constrainWindowPosition());
 }
 
-// Перетаскивание
 function makeDraggable(element, handle) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     handle.onmousedown = dragMouseDown;
@@ -136,23 +204,34 @@ function makeDraggable(element, handle) {
         pos4 = e.clientY;
         let newTop = element.offsetTop - pos2;
         let newLeft = element.offsetLeft - pos1;
+        const maxX = window.innerWidth - element.offsetWidth;
+        const maxY = window.innerHeight - element.offsetHeight;
+        newLeft = Math.min(Math.max(0, newLeft), maxX);
+        newTop = Math.min(Math.max(0, newTop), maxY);
         element.style.top = newTop + "px";
         element.style.left = newLeft + "px";
-        // сохраняем позицию
-        chrome.storage.local.set({
-            floatWindowLeft: newLeft,
-            floatWindowTop: newTop
-        });
     }
     function closeDragElement() {
         document.onmouseup = null;
         document.onmousemove = null;
+        if (floatContainer) {
+            constrainWindowPosition();
+            const left = parseFloat(floatContainer.style.left);
+            const top = parseFloat(floatContainer.style.top);
+            if (!isNaN(left) && !isNaN(top)) {
+                chrome.storage.local.set({
+                    floatWindowLeft: left,
+                    floatWindowTop: top
+                });
+            }
+        }
     }
 }
 
 function showFloatWindow() {
     if (!floatContainer) createFloatingUI();
     floatContainer.style.display = 'block';
+    constrainWindowPosition();
     if (!isPinned) {
         document.addEventListener('click', outsideClickListener);
     }
@@ -170,7 +249,6 @@ function outsideClickListener(e) {
     }
 }
 
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.command === 'toggleFloatWindow') {
         if (floatContainer && floatContainer.style.display === 'block') {
@@ -179,9 +257,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             showFloatWindow();
         }
         sendResponse({ success: true });
-    }
-
-    else if (request.command === 'startSelectionCopy') {
+    } else if (request.command === 'startSelectionCopy') {
         startSelection('copy');
         sendResponse({ success: true });
     } else if (request.command === 'startSelectionRemember') {
@@ -191,9 +267,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         autoFillFromStorage();
         sendResponse({ success: true });
     }
-    return true; // асинхронный ответ
+    return true;
 });
-
 
 let selectionMode = null;
 let lastHighlighted = null;
@@ -202,7 +277,6 @@ function startSelection(mode) {
     if (selectionMode) return;
     selectionMode = mode;
 
-    // Стиль для подсветки
     if (!document.getElementById('my-ext-highlight-style')) {
         const style = document.createElement('style');
         style.id = 'my-ext-highlight-style';
@@ -264,7 +338,6 @@ function extractKeyValuePairs(element) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
     const pairs = [];
 
-    // Слова, которые не могут быть значением
     const skipValues = new Set([
         'редактировать', 'удалить', 'изменить', 'сохранить', 'выбрать файл',
         'перетащите файлы', 'перетащите файлы или выберите на компьютере',
@@ -282,14 +355,20 @@ function extractKeyValuePairs(element) {
     }
 
     function looksLikeValue(str) {
-        return str.length > 0 && !skipValues.has(str.toLowerCase());
+        if (str.length < 2) return false;
+        if (skipValues.has(str.toLowerCase())) return false;
+        if (/^[✖✔❌✅🔒★☆]+$/.test(str)) return false;
+        return true;
     }
 
     for (let i = 0; i < lines.length - 1; i++) {
         const keyLine = lines[i];
         const valueLine = lines[i+1];
         if (looksLikeKey(keyLine) && looksLikeValue(valueLine)) {
-            pairs.push({ key: keyLine, value: valueLine });
+            const normalizedKey = normalizeKeyForStorage(keyLine);
+            if (normalizedKey && isValidValue(valueLine)) {
+                pairs.push({ key: normalizedKey, value: valueLine });
+            }
             i++;
         }
     }
@@ -303,7 +382,9 @@ async function savePairs(pairs) {
     const result = await chrome.storage.local.get('keyValuePairs');
     let existing = result.keyValuePairs || {};
     for (const p of pairs) {
-        existing[p.key] = p.value;
+        if (p.key && isValidValue(p.value)) {
+            existing[p.key] = p.value;
+        }
     }
     await chrome.storage.local.set({ keyValuePairs: existing });
 }
@@ -313,56 +394,117 @@ async function loadPairs() {
     return result.keyValuePairs || {};
 }
 
-async function autoFillFromStorage() {
-    const pairs = await loadPairs();
-    if (Object.keys(pairs).length === 0) {
-        showToast('Нет сохранённых элементов');
-        return;
-    }
-
-    let filledCount = 0;
-    for (const [key, value] of Object.entries(pairs)) {
-        const inputField = findInputByLabel(key);
-        if (inputField) {
-            fillField(inputField, value);
-            filledCount++;
-        } else {
-            console.log(`Не найдено поле для ключа: "${key}"`);
-        }
-    }
-    showToast(`Заполнено полей: ${filledCount}`);
-}
-
+// ================== УЛУЧШЕННЫЙ ПОИСК ПОЛЯ ДЛЯ КЛЮЧА ==================
 function findInputByLabel(labelText) {
-    // 1. Ищем элементы-подписи
-    const possibleLabels = document.querySelectorAll('label, span, div, th, b, strong, .field-label, .form-label, .label');
+    const normalizedTarget = normalizeForCompare(labelText);
+    if (!normalizedTarget) return null;
+    
+    console.log(`[Копирка] Ищем поле для ключа: "${labelText}" (норм: "${normalizedTarget}")`);
+    
+    // 1. Ищем все потенциальные элементы-лейблы, содержащие текст
+    const possibleLabels = document.querySelectorAll('label, span, div, th, b, strong, .field-label, .form-label, .label, .field-name, .caption, .form-question');
+    let bestMatch = null;
+    
     for (let label of possibleLabels) {
-        const labelContent = label.innerText.trim();
-        if (labelContent === labelText || labelContent.startsWith(labelText + ':') || labelContent.endsWith(':' + labelText)) {
+        const rawText = label.innerText?.trim();
+        if (!rawText) continue;
+        const normalizedLabel = normalizeForCompare(rawText);
+        if (normalizedLabel === normalizedTarget) {
+            console.log(`[Копирка] Найден лейбл: "${rawText}" (норм: "${normalizedLabel}")`, label);
+            
+            // Пытаемся найти поле, связанное с этим лейблом
+            let field = null;
+            
+            // А) Если есть атрибут for
             if (label.htmlFor) {
-                const field = document.getElementById(label.htmlFor);
-                if (field && isFillableElement(field)) return field;
-            }
-            let next = label.nextElementSibling;
-            while (next && !isFillableElement(next) && next.tagName !== 'BR') {
-                next = next.nextElementSibling;
-            }
-            if (next && isFillableElement(next)) return next;
-            const parent = label.parentElement;
-            if (parent) {
-                const candidates = Array.from(parent.querySelectorAll('input, textarea, select, [contenteditable="true"]'));
-                for (let cand of candidates) {
-                    if (isFillableElement(cand) && (cand.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-                        return cand;
-                    }
+                field = document.getElementById(label.htmlFor);
+                if (field && isFillableElement(field)) {
+                    console.log(`[Копирка] Найдено поле по for="${label.htmlFor}"`);
+                    bestMatch = field;
+                    break;
                 }
             }
+            
+            // Б) Если внутри label уже есть поле
+            const innerField = label.querySelector('input, textarea, select, [contenteditable="true"]');
+            if (innerField && isFillableElement(innerField)) {
+                console.log(`[Копирка] Найдено поле внутри лейбла`);
+                bestMatch = innerField;
+                break;
+            }
+            
+            // В) Ищем следующий элемент (sibling) в пределах одного контейнера
+            // Ограничиваем поиск 3 уровнями вверх и вниз, не пересекая другие лейблы
+            let container = label.parentElement;
+            for (let depth = 0; depth < 3 && container; depth++) {
+                let next = label.nextElementSibling;
+                // Ищем следующий fillable элемент, но не дальше, чем встретится другой элемент с текстом (возможный лейбл)
+                while (next && !isFillableElement(next)) {
+                    // Если встретили элемент, который похож на лейбл (имеет текст и не является пустым), останавливаемся
+                    const nextText = next.innerText?.trim();
+                    if (nextText && nextText.length > 0 && next !== label) {
+                        // Это может быть другой лейбл, не идём дальше
+                        break;
+                    }
+                    if (isFillableElement(next)) {
+                        field = next;
+                        break;
+                    }
+                    next = next.nextElementSibling;
+                }
+                if (field && isFillableElement(field)) {
+                    console.log(`[Копирка] Найдено поле как следующий sibling`);
+                    bestMatch = field;
+                    break;
+                }
+                // Если не нашли, поднимаемся к родителю и ищем среди его детей после текущего лейбла
+                if (container && container.children) {
+                    const children = Array.from(container.children);
+                    const idx = children.indexOf(label);
+                    if (idx !== -1) {
+                        for (let i = idx + 1; i < children.length; i++) {
+                            const child = children[i];
+                            if (isFillableElement(child)) {
+                                field = child;
+                                break;
+                            }
+                            // Поиск внутри дочерних элементов (на случай, если поле обёрнуто в div)
+                            const innerField2 = child.querySelector('input, textarea, select, [contenteditable="true"]');
+                            if (innerField2 && isFillableElement(innerField2)) {
+                                field = innerField2;
+                                break;
+                            }
+                            // Если встретили другой элемент с текстом (потенциальный лейбл), прекращаем поиск в этой группе
+                            const childText = child.innerText?.trim();
+                            if (childText && childText.length > 0 && child !== label) {
+                                break;
+                            }
+                        }
+                        if (field && isFillableElement(field)) {
+                            console.log(`[Копирка] Найдено поле среди следующих детей родителя`);
+                            bestMatch = field;
+                            break;
+                        }
+                    }
+                }
+                // Переходим к родителю
+                label = container;
+                container = container.parentElement;
+            }
+            if (bestMatch) break;
         }
     }
-    // 2. Таблицы
+    
+    if (bestMatch) {
+        console.log(`[Копирка] Для ключа "${labelText}" выбрано поле:`, bestMatch);
+        return bestMatch;
+    }
+    
+    // 2. Поиск по th (таблицы)
     const ths = document.querySelectorAll('th');
     for (let th of ths) {
-        if (th.innerText.trim() === labelText) {
+        const normalizedTh = normalizeForCompare(th.innerText.trim());
+        if (normalizedTh === normalizedTarget) {
             const td = th.nextElementSibling;
             if (td && td.tagName === 'TD') {
                 const field = td.querySelector('input, textarea, select');
@@ -371,31 +513,23 @@ function findInputByLabel(labelText) {
             }
         }
     }
-    // 3. Placeholder / aria-label
+    
+    // 3. Поиск по placeholder / aria-label
     const inputs = document.querySelectorAll('input, textarea, select');
     for (let inp of inputs) {
         const placeholder = inp.placeholder?.trim();
+        if (placeholder && normalizeForCompare(placeholder) === normalizedTarget) {
+            console.log(`[Копирка] Найдено поле по placeholder: "${placeholder}"`);
+            return inp;
+        }
         const ariaLabel = inp.getAttribute('aria-label')?.trim();
-        if (placeholder === labelText || ariaLabel === labelText) {
+        if (ariaLabel && normalizeForCompare(ariaLabel) === normalizedTarget) {
+            console.log(`[Копирка] Найдено поле по aria-label: "${ariaLabel}"`);
             return inp;
         }
     }
-    // 4. Поиск по ближайшему родителю
-    const allElements = document.querySelectorAll('*');
-    for (let el of allElements) {
-        if (el.innerText && el.innerText.trim() === labelText && el.offsetHeight > 0) {
-            let parent = el.parentElement;
-            for (let i = 0; i < 3; i++) {
-                if (!parent) break;
-                const field = parent.querySelector('input, textarea, select, [contenteditable="true"]');
-                if (field && isFillableElement(field)) return field;
-                parent = parent.parentElement;
-            }
-            let next = el.nextElementSibling;
-            while (next && !isFillableElement(next)) next = next.nextElementSibling;
-            if (next && isFillableElement(next)) return next;
-        }
-    }
+    
+    console.log(`[Копирка] Не удалось найти поле для ключа "${labelText}"`);
     return null;
 }
 
@@ -436,6 +570,32 @@ function fillField(field, value) {
     }
 }
 
+async function autoFillFromStorage() {
+    const pairs = await loadPairs();
+    const cleanPairs = Object.fromEntries(
+        Object.entries(pairs).filter(([key, val]) => isValidValue(val))
+    );
+    if (Object.keys(cleanPairs).length === 0) {
+        showToast('Нет сохранённых элементов');
+        return;
+    }
+
+    let filledCount = 0;
+    for (const [key, value] of Object.entries(cleanPairs)) {
+        const inputField = findInputByLabel(key);
+        if (inputField) {
+            // Дополнительная проверка: если поле уже содержит какое-то значение, не перезаписываем? По желанию
+            // Но для теста оставим перезапись.
+            fillField(inputField, value);
+            filledCount++;
+            console.log(`[Копирка] Заполнено поле "${key}" значением "${value}"`);
+        } else {
+            console.log(`[Копирка] Поле для ключа "${key}" не найдено`);
+        }
+    }
+    showToast(`Заполнено полей: ${filledCount}`);
+}
+
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
@@ -473,5 +633,4 @@ function showToast(message) {
     setTimeout(() => toast.remove(), 2000);
 }
 
-// Инициализация: создаём окно, но скрытым
 createFloatingUI().then(() => hideFloatWindow());
